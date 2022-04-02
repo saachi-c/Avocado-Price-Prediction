@@ -1,4 +1,4 @@
-# Avocado-Price-Prediction
+# Avocado-Price-Prediction  Fall 2021
 EDA and Price prediction of avocados using ML and time series forecasting
 
 Exploratory Data Analysis
