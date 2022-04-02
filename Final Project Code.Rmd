@@ -1,0 +1,1007 @@
+---
+title: "EDA and Time Series Forecasting of Avocado prices"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## DS 5110 - INTRODUCTION TO DATA MANAGEMENT AND PROCESSING
+## GROUP 3 - FINAL PROJECT CODE
+## EDA and Time Series Forecasting of Avocado prices
+## Authors: Amey Shankar Basangoudar, Priyesh Priyesh, Riddhi Narayan, Saachi Chandrashekhar
+## Dataset: https://www.kaggle.com/neuromusic/avocado-prices
+
+
+```{r}
+#Importing libraries
+
+library(tidyverse)
+library(modelr)
+library(repr)
+library(grid)
+library(dplyr)
+library(cowplot) 
+library(forecast)
+library(ggplot2)
+library(grid)
+library(corrplot)
+library(RColorBrewer)
+library(Metrics)
+library(caret)
+```
+
+
+```{r}
+#Importing dataset
+df <- read_csv("E:/SAACHI/PERSONAL/COLLEGES/NEU/2021/IDMP/PROJECT/Avocado/avocado.csv", na = ".")
+head(df)
+```
+
+
+```{r}
+#Tidying the data
+avocado_tidied <- df %>% pivot_longer(cols = c(`4046`, `4225`, `4770`), names_to = "PLU type", values_to = "Volume of each PLU Sold")
+avocado_tidied <- avocado_tidied %>% pivot_longer(cols = c(`Small Bags`, `Large Bags`, `XLarge Bags`), names_to = "Bag type", values_to = "Volume of each bag sold")
+```
+
+
+```{r}
+#Distribution of all variables 
+options(scipen = 999)
+library(grid)
+p1 <- avocado_tidied %>% 
+  ggplot(aes(x = AveragePrice)) + 
+  geom_histogram(aes(y = ..density..), color = 'black', fill = 'white') +
+  geom_density(alpha=.2, fill="#FF6666") + theme_dark()
+
+p2 <- avocado_tidied %>% 
+  ggplot(aes(x = `Total Volume`)) + 
+  geom_boxplot(fill="#FF6666") + 
+  scale_x_log10() +
+  theme_dark() + 
+  coord_flip()
+
+p3 <- avocado_tidied %>% 
+  ggplot(aes(x = `Volume of each PLU Sold`)) + 
+  geom_boxplot(fill="#FF6666") + 
+  facet_wrap(~`PLU type`) +
+  scale_x_log10() +
+  theme_dark() + 
+  coord_flip()
+
+p4 <- avocado_tidied %>% 
+  ggplot(aes(x = `Total Bags`)) + 
+  geom_boxplot(fill="yellow") + 
+  scale_x_log10() +
+  theme_dark() + 
+  coord_flip()
+
+p5 <- avocado_tidied %>% 
+  ggplot(aes(x = `Volume of each bag sold`)) + 
+  geom_boxplot(fill="yellow") + 
+  facet_wrap(~`Bag type`) +
+  scale_x_log10() +
+  theme_dark() + 
+  coord_flip()
+
+
+
+vplayout <- function(x, y) viewport(layout.pos.row = x, layout.pos.col = y)
+
+grid.newpage()
+pushViewport(viewport(layout = grid.layout(8, 3))) # 5 rows, 3 columns
+print(p1, vp = vplayout(1:4, 1:2))  # the big plot covers rows 1:2 and cols 1:3
+print(p2, vp = vplayout(5:6, 1))
+print(p3, vp = vplayout(5:6, 2:3))
+print(p4, vp = vplayout(7:8, 1))
+print(p5, vp = vplayout(7:8, 2:3))
+```
+
+## EXPLORATORY DATA ANALYSIS
+
+```{r}
+#Price per type
+ggplot(df, aes(df$type, df$AveragePrice, color = df$type))+
+    geom_boxplot()+
+    labs(x = "Type", y ="Average Price", title = "Average price of avocado by avocado type")
+```
+
+```{r}
+# 1. Distribution of average price for each region 
+options(repr.plot.width=15, repr.plot.height=8)
+avocado_tidied %>% 
+  ggplot(aes(x = region, y = AveragePrice)) + 
+  geom_boxplot(aes(fill = region), show.legend = FALSE) + 
+  theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+```{r}
+# 2. Average Price Vs Total volume sold 
+avocado_tidied %>% 
+  ggplot(aes(x = `Total Volume`, y = AveragePrice)) +
+  geom_point(aes(color = type), alpha = 0.05) +
+  geom_smooth(aes(color = type)) + 
+  scale_x_log10()
+```
+
+
+```{r}
+# 3. Distribution of AveragePrice avocados in each region for each type 
+options(repr.plot.width=20, repr.plot.height=8)
+avocado_tidied %>% 
+  ggplot(aes(x = region, y = AveragePrice)) + 
+  geom_boxplot(aes(fill = `type`)) + 
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+```{r}
+# 4. Distribution of  avocados in each region for each type 
+
+options(repr.plot.width=20, repr.plot.height=8)
+avocado_tidied %>% 
+  ggplot( aes(x = region, y = `Total Volume`)) + 
+  geom_boxplot(aes(fill = `type`)) + 
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+```{r}
+# 5. AveragePrice Vs Total volume sold in each year
+avocado_tidied %>% 
+  ggplot(aes(x = `Total Volume`, y = AveragePrice)) +
+  geom_hex(aes(color = as.factor(year)), alpha = 0.03, show.legend = FALSE) +
+  geom_smooth(aes(color = as.factor(year))) +
+  facet_wrap(~year) +
+  scale_x_log10()
+```
+
+
+```{r}
+# 6. Price vs date (for each type of avocado) 
+
+ggplot(data = df, aes(x = Date, y = AveragePrice, color=type)) +
+     geom_line() + ggtitle('Distribution of price vs. date') +
+     facet_wrap(~ type) + theme_minimal() + theme(legend.position="right")
+
+ggplot(data = df, aes(x = Date, y = `Total Volume`, color=type)) +
+     geom_line() + ggtitle('Distribution of price vs. date') +
+     facet_wrap(~ type) + theme_minimal() + theme(legend.position="right")
+```
+
+
+```{r}
+# 7. Change of price with repect to date
+df1 <- df %>% select(Date,AveragePrice)  %>% group_by(Date)  %>% summarise(AveragePrice = mean(AveragePrice), n = n())%>% arrange(Date) 
+head(df1)
+
+ggplot() + geom_line(data=df1, aes(x =Date, y=(AveragePrice)
+                                         ))  +
+  labs(x="Date", y="price",
+       title="Change of price with repect to date") + 
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+```{r}
+# 8. Count per region
+avoc <- df %>%
+  rename(volume = `Total Volume`, total_bag = `Total Bags`)
+ 
+avoc %>%
+  group_by(region) %>%
+  summarise(volume = sum(volume)) %>%
+  ggplot(aes(reorder(region, volume), volume)) +
+  geom_col( width = 0.5) +
+ coord_flip()+
+  labs(title = "Count of Avocados by region",
+       x = "", y = "Total volume")
+```
+
+
+```{r}
+# 9. Price per region
+df %>%
+  group_by(region) %>%
+  summarise(price = mean(AveragePrice)) %>%
+  arrange(price) %>%
+  ggplot(aes(reorder(region, price), price)) +
+  geom_point() +
+  coord_flip() +
+  labs(title = "Avg avocado price by region",
+        y = "Cost", x = "Region") 
+```
+
+
+```{r}
+# 10. Avg Price and Sales in Boston
+
+Bos <- avoc %>% filter(df$region == "Boston")
+
+ggplot(data = Bos, aes(x = Date, y = AveragePrice, color=type)) +
+     geom_line() + ggtitle('BOSTON - Distribution of price vs. date') +
+      theme_minimal() + theme(legend.position="right")
+
+ggplot(data = Bos, aes(x = Date, y = volume, color=type)) +
+     geom_line() + ggtitle('BOSTON - Distribution of volume vs. date') +
+      theme_minimal() + theme(legend.position="right")
+```
+
+
+```{r}
+# 11. Bags sold
+mymonths <- c("Jan","Feb","Mar",
+              "Apr","May","Jun",
+              "Jul","Aug","Sep",
+              "Oct","Nov","Dec")
+#Distribution of average sales of different sizes per month
+df_date <- df%>% mutate(year = lubridate::year(Date), 
+                month = lubridate::month(Date), 
+                day = lubridate::day(Date))
+
+df_date$Month_Name <- mymonths[ df_date$month ]
+
+df_new <- df_date%>%
+rename(small = `Small Bags`, large = `Large Bags`,xlarge = `XLarge Bags`)
+head(df_new)
+
+bag_data<- df_new%>%
+group_by(Date,year,Month_Name,month) %>%
+summarize(s_bag = mean(small),l_bag = mean(large),
+xl_bag = mean (xlarge),avg_price = mean(AveragePrice ))%>%
+arrange(Date)
+
+plot_bag_data <- bag_data %>% gather(key = "bagsize", value="Total_no_of_bags", c(5:7))
+
+plot_bag_data$month_abb <- sapply(plot_bag_data$month, function(x) month.abb[as.numeric(x)])
+plot_bag_data$month_abb = factor(plot_bag_data$month_abb, levels = month.abb)
+
+options(repr.plot.width=15, repr.plot.height=8)
+plot_bag_data$bagsize  <- factor(plot_bag_data$bagsize, levels=c("xl_bag", "l_bag", "s_bag"))
+
+ggplot(plot_bag_data, aes(x= month_abb, y=Total_no_of_bags, color = bagsize))+
+    geom_bar(aes(x= month_abb, y=Total_no_of_bags, fill = bagsize), stat= 'identity',color="white")+
+    scale_fill_manual(values = c("purple", "orange", "red")) +
+    labs(y= "Total Bag Sales" ,x="Month",title = "Sales in 2015-2018")+
+    theme(legend.position = "bottom",axis.text.y = element_text( angle=45),
+    axis.text.x= element_text( angle=90),
+    legend.direction = "horizontal")  +
+    facet_grid(cols=vars(year))
+```
+
+```{r}
+# 12. Choropleth
+avocado_df_new <- df
+us_cities <- read_csv("citystate.csv", na = ".")
+
+ MainStates <- map_data("state")
+
+ MainStates1 <- MainStates %>% 
+  rename(
+    State = region
+    )
+ df1 <- MainStates1 %>% select((State))
+ distinct(df1)
+ avocado_df2 <- avocado_df_new   %>% select(region,AveragePrice,Date)  %>% mutate(region = tolower(region))  %>% group_by(region,Date) %>% summarise(AveragePrice = mean(AveragePrice), n = n())
+abc<-avocado_df2 %>% select(region) %>% distinct()  %>% print()
+#view(abc)
+ us_cities1 <- us_cities  %>% mutate(region = tolower(city),State = tolower(state) )
+us_cities1<- distinct(us_cities1) %>% arrange(region) 
+ avocado_df_state <- inner_join(us_cities1,avocado_df2, sort = Date,by="region")
+
+choro <- inner_join(MainStates1,avocado_df_state, sort = FALSE, by = "State") 
+ 
+ choro <- choro %>% mutate(year=format(Date,format="%Y"))
+
+ 
+
+
+ggplot(MainStates,aes(long, lat, map_id = region)) + geom_map(map = MainStates,color = "black",size = 0.3,fill="grey") + geom_polygon( data=choro , aes(x=long, y=lat, group=State,
+                  fill=AveragePrice), color="black" ) + facet_wrap(~year) +coord_map()
+```
+
+
+## MODELLING
+
+## LINEAR REGRESSION
+```{r}
+#AVERAGE PRICE VS VOLUME
+
+ggplot(avoc, aes(x=log10(volume), y=AveragePrice)) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs vol", 
+       x = "Volume" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+ggplot(avoc, aes(x=log10(volume), y=log10(AveragePrice))) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs vol", 
+       x = "Volume" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+
+#AVERAGE PRICE VS TOTAL BAGS
+
+ggplot(avoc, aes(x=log10(total_bag), y=AveragePrice)) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs Total bags", 
+       x = "Total bags" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+ggplot(avoc, aes(x=log10(total_bag), y=log10(AveragePrice))) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs Total bags", 
+       x = "Total bags" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+
+#AVERAGE PRICE VS 4046 type
+
+ggplot(avoc, aes(x=log10(`4046`), y=AveragePrice)) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs 4046 type", 
+       x = "4046 type" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+ggplot(avoc, aes(x=log10(`4046`), y=log10(AveragePrice))) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs 4046 type", 
+       x = "4046 type" ,
+       y = "Avg Price") +
+   theme_minimal()
+  
+
+#AVERAGE PRICE VS 4225 type
+
+ggplot(avoc, aes(x=log10(`4225`), y=AveragePrice)) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs 4225 type", 
+       x = "4225 type" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+ggplot(avoc, aes(x=log10(`4225`), y=log10(AveragePrice))) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs 4225 type", 
+       x = "4225 type" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+
+#AVERAGE PRICE VS 4770 type
+
+ggplot(avoc, aes(x=log10(`4770`), y=AveragePrice)) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs 4770 type", 
+       x = "4770 type" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+ggplot(avoc, aes(x=log10(`4770`), y=log10(AveragePrice))) +
+  geom_point(size = 1) + geom_smooth(method="lm") +
+  labs(title = "Avg price vs 4770 type", 
+       x = "4770 type" ,
+       y = "Avg Price") +
+   theme_minimal()
+
+#AVERAGE PRICE VS TYPE
+
+ggplot(avoc, aes(x=type, y=AveragePrice, fill=type)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Set1", direction=-1) +
+  labs(y="Average Price",
+       title="Average price vs Type") +
+  theme_minimal()
+
+#AVERAGE PRICE VS REGION
+
+ggplot(avoc, aes(x=region, y=AveragePrice, fill=region)) +
+  geom_boxplot() +
+  labs(y="Average Price",
+       title="Average price vs Region") +
+  theme_minimal()
+```
+
+
+```{r}
+# FITS
+
+fit_1 <- lm(log10(AveragePrice) ~ log10(volume), data=avoc)
+fit_2 <- lm(log10(AveragePrice) ~ type, data=avoc)
+fit_3 <- lm(log10(AveragePrice) ~ region, data=avoc)
+fit_4 <- lm(log10(AveragePrice) ~ log10(total_bag+1), data=avoc)
+fit_5 <- lm(log10(AveragePrice) ~ log10(`4046` + 1), data=avoc)
+fit_6 <- lm(log10(AveragePrice) ~ log10(`4225` + 1), data=avoc)
+fit_7 <- lm(log10(AveragePrice) ~ log10(`4770`+ 1), data=avoc)
+
+summary(fit_1)
+summary(fit_2)
+summary(fit_3)
+summary(fit_4)
+summary(fit_5)
+summary(fit_6)
+summary(fit_7)
+```
+
+
+```{r}
+#RESIDUAL
+
+avoc %>%
+  add_residuals(fit_1, "resid") %>%
+  ggplot(aes(x=log10(volume))) +
+  geom_point(aes(y=resid), alpha=0.5) +
+  labs(x="Log volume", y="Residuals") +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_2, "resid") %>%
+  ggplot(aes(x=type)) +
+  geom_boxplot() +
+  labs(x="Type", y="Residuals") +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_3, "resid") %>%
+  ggplot(aes(x=region)) +
+  geom_boxplot() +
+  labs(x="Region", y="Residuals") +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_4, "resid") %>%
+  ggplot(aes(x=log10(total_bag))) +
+  geom_point(aes(y=resid), alpha=0.5) +
+  labs(x="Log total bag", y="Residuals") +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_5, "resid") %>%
+  ggplot(aes(x=log10(`4046`))) +
+  geom_point(aes(y=resid), alpha=0.5) +
+  labs(x="Log 4046", y="Residuals") +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_6, "resid") %>%
+  ggplot(aes(x=log10(`4225`))) +
+  geom_point(aes(y=resid), alpha=0.5) +
+  labs(x="Log 4225", y="Residuals") +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_7, "resid") %>%
+  ggplot(aes(x=log10(`4770`))) +
+  geom_point(aes(y=resid), alpha=0.5) +
+  labs(x="Log 4770", y="Residuals") +
+  theme_minimal()
+```
+
+
+```{r}
+# QQ PLOT
+
+avoc %>%
+  add_residuals(fit_1, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_2, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_3, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_4, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_5, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_6, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  theme_minimal()
+
+avoc %>%
+  add_residuals(fit_7, "resid") %>%
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  theme_minimal()
+```
+
+
+```{r}
+#AIC
+
+first_model <- lm(log10(AveragePrice) ~ region, data=avoc)
+fit_all <- lm(log10(AveragePrice) ~ log10(volume) + log10(total_bag+1) + type + region + log10(`4046`+1) + log10(`4225`+1) + log10(`4770`+1) , data = avoc)
+step(first_model, direction = 'forward', scope = formula(fit_all))
+```
+
+
+```{r}
+# AIC
+
+first_model <- lm(log10(AveragePrice) ~ region, data=avoc)
+fit_all <- lm(log10(AveragePrice) ~ log10(volume) + log10(total_bag+1) + type + region + log10(`4046`+1) + log10(`4225`+1) + log10(`4770`+1) , data = avoc)
+step(first_model, direction = 'forward', scope = formula(fit_all))
+```
+
+
+```{r}
+#RMSE
+
+
+set.seed(2)
+av_part <- resample_partition(avoc,
+                                    p=c(train=0.5,
+                                        valid=0.25,
+                                        test=0.25))
+
+av_part
+```
+
+
+```{r}
+step1 <- function(response, predictors, candidates, partition)
+{
+  rhs <- paste0(paste0(predictors, collapse="+"), "+", candidates)
+  formulas <- lapply(paste0(response, "~", rhs), as.formula)
+  rmses <- sapply(formulas,
+                  function(fm) rmse(lm(fm, data=partition$train),
+                                    data=partition$valid))
+  names(rmses) <- candidates
+  attr(rmses, "best") <- rmses[which.min(rmses)]
+  rmses
+}
+
+model <- NULL
+```
+
+
+```{r}
+#Step 1 (no variables):
+
+preds <- "1"
+cands <- c("log10(volume)" , "log10(total_bag+1)" , "type" , "region" , 
+"log10(`4046`+1)" , "log10(`4225`+1)" , "log10(`4770`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+
+```{r}
+#Step 2:
+
+preds <- "type"
+cands <- c("log10(volume)" , "log10(total_bag+1)" ,  "region" , "log10(`4046`+1)" , "log10(`4225`+1)" , "log10(`4770`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+
+```{r}
+#Step 3:
+
+preds <- c("type", "region")
+cands <- c("log10(volume)" , "log10(total_bag+1)" , "log10(`4046`+1)" , "log10(`4225`+1)" , "log10(`4770`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+
+```{r}
+#Step 4: 
+
+preds <- c("type", "region", "log10(volume)")
+cands <- c( "log10(total_bag+1)" , "log10(`4046`+1)" , "log10(`4225`+1)" , "log10(`4770`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+
+```{r}
+#Step 5:
+
+
+preds <- c("type", "region", "log10(volume)", "log10(`4225`+1)")
+cands <- c( "log10(total_bag+1)" , "log10(`4046`+1)" ,  "log10(`4770`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+```{r}
+#Step 6: 
+
+
+preds <- c("type", "region", "log10(volume)", "log10(`4225`+1)","log10(`4770`+1)")
+cands <- c( "log10(total_bag+1)" , "log10(`4046`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+
+```{r}
+#Step 7:
+
+preds <- c("type", "region", "log10(volume)", "log10(`4225`+1)","log10(`4770`+1)", "log10(total_bag+1)")
+cands <- c(  "log10(`4046`+1)")
+s1 <- step1("log10(AveragePrice)", preds, cands, av_part)
+
+model <- c(model, attr(s1, "best"))
+s1
+```
+
+
+```{r}
+step_model <- tibble(index=seq_along(model),
+                     variable=factor(names(model), levels=unique(names(model))),
+                     RMSE=model)
+
+ggplot(step_model, aes(y=RMSE)) +
+  geom_point(aes(x=variable)) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=3)) +
+  geom_line(aes(x=index)) +
+  labs(title="Stepwise model selection") +
+  theme_minimal()
+```
+
+
+```{r}
+# LINEAR REGRESSION MODEL
+set.seed(1)
+row.number <- sample(1:nrow(avoc), 0.8*nrow(avoc))
+train = avoc[row.number,]
+test = avoc[-row.number,]
+dim(train)
+dim(test)
+```
+
+
+```{r}
+Final_fit <- lm(formula = log10(AveragePrice) ~ type + region + log10(volume) + 
+    log10(`4225` + 1) + log10(`4770` + 1) + log10(total_bag + 
+    1) + log10(`4046` + 1), data = train)
+
+summary(Final_fit)
+plot(Final_fit)
+```
+
+
+```{r}
+pred <- predict(Final_fit, data = test)
+
+actuals_preds <- data.frame(cbind(actuals=test$AveragePrice, predicteds=pred))
+linear_df <- data.frame(cbind(AveragePrice=test$AveragePrice, pred=pred))
+
+correlation_accuracy <- cor(actuals_preds)
+correlation_accuracy
+
+head(actuals_preds)
+
+rmse(actuals_preds$actuals,actuals_preds$predicteds)
+```
+
+## RANDOM FOREST
+```{r}
+#Random Forest
+
+avoc = avoc %>% mutate(id = rownames(avoc))
+
+set.seed(46848)
+test_rows = sample(avoc$id, nrow(avoc)*0.2, replace = F) %>% as.numeric()
+
+train_rf = avoc %>% filter(!id %in% test_rows)
+test_rf = avoc %>% filter(id %in% test_rows) %>% select(-AveragePrice)
+
+head(train_rf)
+dim(train_rf)
+
+head(test_rf)
+dim(test_rf)
+```
+
+
+```{r}
+rf = train( AveragePrice ~.,  data = train_rf %>% select(-id),
+    method = "ranger",
+    num.trees = 100,
+    trControl = trainControl(method = "oob"),
+    tuneGrid = expand.grid("mtry" = c(8, 10, 12, 14),
+                          "splitrule" = "variance",
+                          "min.node.size" = 1:10)
+)
+```
+
+
+```{r}
+rf_pred = predict(
+    rf,
+    newdata = test_rf
+)
+
+# The results
+rf_df = data.frame(
+    id = test_rf %>% select(id),
+    AveragePrice = avoc %>% filter(id %in% test_rows) %>% select(AveragePrice),
+    pred = rf_pred
+)
+```
+
+```{r}
+rmse = function(df){
+    (df$AveragePrice - df$pred)^2 %>% mean() %>% sqrt()
+}
+
+rmse(rf_df)
+rmse(linear_df)
+```
+
+
+```{r}
+all_data <- data.frame(model_name = c("random forest", "linear regression"), 
+rmse_vals = c(rmse(rf_df), rmse(linear_df)))
+
+ggplot(all_data, aes(model_name, rmse_vals)) + 
+geom_col(fill = c("darkgreen"), col = "red") + 
+geom_text(aes(label = round(rmse_vals, 4)), vjust = 0)+ 
+ggtitle("RMSE Values") + 
+theme_light()
+```
+
+
+
+
+
+
+## TIME SERIES ANALYSIS
+```{r}
+library(fpp2)
+library(tibbletime)
+library(dplyr)
+
+```
+
+
+```{r}
+# Let's declare our data as time series
+conv <- df%>% select(Date, AveragePrice, type) %>% filter(type == "conventional")
+org <- df %>% select(Date, AveragePrice, type) %>% filter(type == "organic")
+```
+
+
+```{r}
+
+# conventional 
+conventional <- as_tbl_time(conv, index=Date)
+conventional<- as_period(conventional, '1 month')
+conventional$type <- NULL
+
+# Organic Avocados
+organic <- as_tbl_time(org, index=Date)
+organic <- as_period(organic, '1 month')
+organic$type <- NULL
+```
+
+
+```{r}
+conv_ts <- ts(conventional[,2], start=c(2015, 1),end=c(2018,12), frequency=12)
+org_ts <- ts(organic[,2], start=c(2015, 1),end=c(2018,12), frequency=12)
+differences_conv <- diff(conv_ts)
+
+main_diff <- autoplot(differences_conv) + theme_minimal()
+seasonality_diff <- ggseasonplot(differences_conv) + theme_minimal()
+
+plot_grid(main_diff, seasonality_diff, nrow=2)
+head(conventional)
+```
+
+
+```{r}
+arima_model_cv <- auto.arima(conv_ts, d=1, D=1, stepwise=FALSE, approximation=FALSE, trace=TRUE)
+arima_model_or <- auto.arima(org_ts, d=1, D=1, stepwise=FALSE, approximation=FALSE, trace=TRUE)
+
+
+print(summary(arima_model_cv))
+checkresiduals(arima_model_cv) + theme_minimal()
+
+```
+
+
+```{r}
+print(summary(arima_model_or))
+checkresiduals(arima_model_or) + theme_minimal()
+```
+
+
+```{r}
+options(repr.plot.width=10, repr.plot.height=7)
+install.packages('ggthemes')
+library(ggthemes)
+
+conv_forecast_sn <- autoplot(conv_ts) +
+  autolayer(meanf(conv_ts, h=24),
+    series="Mean", PI=FALSE) +
+  autolayer(naive(conv_ts, h=24),
+    series="Naïve", PI=FALSE) +
+  autolayer(snaive(conv_ts, h=24),
+    series="Seasonal naïve", PI=FALSE) +
+  ggtitle("Conventional Avocado \n Seasonal Naive Method") +
+  xlab("Date") + ylab("Price") + scale_color_manual(values=c("#FA5858", "#00BFFF", "#FF8000")) + 
+  guides(colour=guide_legend(title="Forecast"))  + theme_economist() + 
+theme(plot.title=element_text(hjust=0.5), plot.background=element_rect(fill="#F4F6F7"))
+
+org_forecast_sn <- autoplot(org_ts) +
+  autolayer(meanf(org_ts, h=24),
+    series="Mean", PI=FALSE) +
+  autolayer(naive(org_ts, h=24),
+    series="Naïve", PI=FALSE) +
+  autolayer(snaive(org_ts, h=24),
+    series="Seasonal naïve", PI=FALSE) +
+  ggtitle("Organic Avocado \n Seasonal Naive Method") +
+  xlab("Date") + ylab("Price") + scale_color_manual(values=c("#FA5858", "#00BFFF", "#FF8000")) + 
+  guides(colour=guide_legend(title="Forecast"))  + theme_economist() + 
+theme(plot.title=element_text(hjust=0.5), plot.background=element_rect(fill="#DCFCE6"), legend.position="none")
+
+
+plot_grid(conv_forecast_sn, org_forecast_sn, nrow=2)
+#plot(conv_forecast_sn)
+```
+
+
+```{r}
+forecast_cv <- forecast(arima_model_cv, h=24)
+# Include means including the last 60 months in order to see closer the forecast.
+autoplot(forecast_cv, include=60) + theme_minimal() + theme(plot.title=element_text(hjust=0.5), plot.background=element_rect(fill="#F4F6F7"),
+      legend.position="bottom", legend.background = element_rect(fill="#FFF9F5",
+                                  size=0.5, linetype="solid", 
+                                  colour ="black")) + 
+labs(title="Forecasting using ARIMA model \n Conventional Avocados", x="Date", y="Price")
+```
+
+
+```{r}
+forecast_org <- forecast(arima_model_or, h=24)
+# Include means including the last 60 months in order to see closer the forecast.
+autoplot(forecast_org, include=60) + theme_minimal() + theme(plot.title=element_text(hjust=0.5), plot.background=element_rect(fill="#d0f0c0"),
+      legend.position="bottom", legend.background = element_rect(fill="#fffacd",
+                                  size=0.5, linetype="solid", 
+                                  colour ="black")) + 
+labs(title="Forecasting using ARIMA model \n Organic Avocados", x="Date", y="Price")
+
+```
+
+
+```{r}
+install.packages('textclean')
+install.packages('plotly')
+install.packages('reshape2')
+```
+
+
+```{r}
+library(tidyverse)
+library(textclean)
+library(lubridate)
+library(ggplot2)
+library(data.table)
+library(zoo)
+library(tseries)
+library(forecast)
+library(scales)
+library(plotly)
+library(reshape2)
+library(tidyr)
+library(dplyr)
+```
+
+
+```{r}
+df$region <- strip(df$region) 
+US_avocados <- df[df$region=="totalus",] ## Isolate rows only containing totalus
+avocado_price<- US_avocados[US_avocados$type=="conventional",] ## Isolate only conventional avocados
+avocado_price <- avocado_price[order(as.Date(avocado_price$Date, format = "%d/%m/%Y")),]
+head(avocado_price)
+```
+
+
+```{r}
+#visualising the time series
+ggplot()+
+  geom_line(data = avocado_price, aes(x = Date, y = AveragePrice),color = "#00AFBB", size = 0.6)+
+  geom_vline(xintercept=c(as.Date("2017-09-10"), as.Date("2018-03-25")), linetype="dashed", size =1) +
+  annotate("rect", xmin = as.Date("2017-09-10"), xmax = as.Date("2018-03-25"), ymin = -Inf,
+           ymax = Inf, alpha =0.1, fill = "red")+
+  xlab("Year") + ylab("Avocado Price($)")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.position = "none")
+```
+
+```{r}
+## Decomposing the timeseries to visualise weeks
+week_price <- ts(na.omit(avocado_price$AveragePrice), frequency = 52)
+decomp <- stl(week_price, s.window = "periodic")
+plot(decomp, cex = 0.5)
+```
+
+
+```{r}
+avo_price <- avocado_price$AveragePrice
+```
+
+### As p>0.05, the alternative hypothesis cannot be rejected. Therefore, differencing was used to remove trends and seasonal patterns
+```{r}
+adf.test(avo_price, alternative = "stationary")
+```
+
+
+
+```{r}
+avo_price.diff <- diff(avocado_price$AveragePrice, difference = 1)
+adf.test(avo_price.diff,alternative = "stationary")
+```
+
+
+```{r}
+auto.arima(avo_price, d=1, seasonal = TRUE)
+fit.price <- arima(avo_price[1:140], order = c(0,1,0), seasonal = list(order=c(0,1,1), period = 1))
+pre.week <- predict(fit.price, n.ahead = 3)
+matplot(1:29, cbind(avo_price[141:169], pre.week$pred), type = "l", xlab = "Weeks", ylab = "Average Price across the US ($)", main = "autoARIMA")
+```
+
+
+```{r}
+arima_model_cv <- auto.arima(conv_ts, d=1, D=1, stepwise=FALSE, approximation=FALSE, trace=TRUE)
+arima_model_or <- auto.arima(org_ts, d=1, D=1, stepwise=FALSE, approximation=FALSE, trace=TRUE)
+
+
+print(summary(arima_model_cv))
+checkresiduals(arima_model_cv) + theme_minimal()
+```
+
+
+```{r}
+```
+
+```{r}
+```
+
+
+```{r}
+```
